@@ -1,37 +1,69 @@
 name: Sync Garmin Global to Garmin CN
 
 on:
-  workflow_dispatch:  # 启用手动触发
-  schedule:          # 定时任务
-    - cron: "0 */6 * * *"  # 每6小时执行一次（UTC时间）
+  workflow_dispatch:  # 手动触发[6,11](@ref)
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时UTC时间自动触发[6,11](@ref)
 
 env:
-  # please change to your own config.
-  RQ_COOKIE: ${{ secrets.RQ_COOKIE }}
-  RQ_CSRF_TOKEN: ${{ secrets.RQ_CSRF_TOKEN }}
-  RQ_USERID: ${{ secrets.RQ_USERID }}
-  GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-  GOOGLE_API_CLIENT_EMAIL: ${{ secrets.GOOGLE_API_CLIENT_EMAIL }}
-  GOOGLE_API_PRIVATE_KEY: ${{ secrets.GOOGLE_API_PRIVATE_KEY }}
-  BARK_KEY: ${{ secrets.BARK_KEY }}
+  # 中国区账号凭证
   GARMIN_USERNAME: ${{ secrets.GARMIN_USERNAME }}
   GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+  
+  # 国际区账号凭证 
   GARMIN_GLOBAL_USERNAME: ${{ secrets.GARMIN_GLOBAL_USERNAME }}
   GARMIN_GLOBAL_PASSWORD: ${{ secrets.GARMIN_GLOBAL_PASSWORD }}
+  
+  # 全量迁移配置
+  GARMIN_MIGRATE_NUM: "100"  # 单次最大迁移数量[11](@ref)
+  GARMIN_MIGRATE_START: "0"    # 从第一条记录开始
+
+  # 辅助配置
+  BARK_KEY: ${{ secrets.BARK_KEY }}  # 通知密钥[6](@ref)
+  TZ: Asia/Shanghai           # 时区设置[11](@ref)
 
 jobs:
-  build:
+  full-sync:
     runs-on: ubuntu-latest
-    name: Sync Garmin Global to Garmin CN
+    name: Full Data Sync
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      # 代码检出
+      - name: Checkout code
+        uses: actions/checkout@v4  # 升级到Node20版本[1](@ref)
         with:
-          node-version: "14"
-          cache: "yarn"
-      - run: yarn
-      - run: yarn sync_global
-        timeout-minutes: 5
-      - uses: stefanzweifel/git-auto-commit-action@v4
+          persist-credentials: false
+
+      # 环境配置
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          commit_message: Save Garmin Session
+          node-version: 20.x
+          cache: 'yarn'
+
+      # 依赖安装
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      # 数据迁移
+      - name: Run full sync
+        run: yarn sync_global
+        env:
+          FORCE_MIGRATE: "true"  # 强制全量覆盖[11](@ref)
+        timeout-minutes: 30      # 延长超时时间[6](@ref)
+
+      # 结果提交
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "feat: Full sync completed"
+          branch: main
+
+      # 通知模块
+      - name: Send notification
+        if: always()
+        uses: finab/action-bark@v2
+        with:
+          url: ${{ env.BARK_KEY }}
+          title: "Sync Result"
+          group: GarminSync
+          body: "${{ job.status }} - Full sync completed at $(date)"
