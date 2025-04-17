@@ -1,69 +1,41 @@
 name: Sync Garmin Global to Garmin CN
 
 on:
-  workflow_dispatch:  # 手动触发[6,11](@ref)
+  workflow_dispatch:
   schedule:
-    - cron: '0 */6 * * *'  # 每6小时UTC时间自动触发[6,11](@ref)
-
-env:
-  # 中国区账号凭证
-  GARMIN_USERNAME: ${{ secrets.GARMIN_USERNAME }}
-  GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-  
-  # 国际区账号凭证 
-  GARMIN_GLOBAL_USERNAME: ${{ secrets.GARMIN_GLOBAL_USERNAME }}
-  GARMIN_GLOBAL_PASSWORD: ${{ secrets.GARMIN_GLOBAL_PASSWORD }}
-  
-  # 全量迁移配置
-  GARMIN_MIGRATE_NUM: "100"  # 单次最大迁移数量[11](@ref)
-  GARMIN_MIGRATE_START: "0"    # 从第一条记录开始
-
-  # 辅助配置
-  BARK_KEY: ${{ secrets.BARK_KEY }}  # 通知密钥[6](@ref)
-  TZ: Asia/Shanghai           # 时区设置[11](@ref)
+    - cron: '0 0 * * *'  # 每天凌晨执行同步任务
 
 jobs:
-  full-sync:
+  sync:
     runs-on: ubuntu-latest
-    name: Full Data Sync
     steps:
-      # 代码检出
-      - name: Checkout code
-        uses: actions/checkout@v4  # 升级到Node20版本[1](@ref)
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          fetch-depth: 0
 
-      # 环境配置
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          node-version: 20.x
-          cache: 'yarn'
+          python-version: '3.9'
 
-      # 依赖安装
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
 
-      # 数据迁移
-      - name: Run full sync
-        run: yarn sync_global
+      - name: Sync Garmin Global to Garmin CN
         env:
-          FORCE_MIGRATE: "true"  # 强制全量覆盖[11](@ref)
-        timeout-minutes: 30      # 延长超时时间[6](@ref)
-
-      # 结果提交
-      - name: Commit changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "feat: Full sync completed"
-          branch: main
-
-      # 通知模块
-      - name: Send notification
-        if: always()
-        uses: finab/action-bark@v2
-        with:
-          url: ${{ env.BARK_KEY }}
-          title: "Sync Result"
-          group: GarminSync
-          body: "${{ job.status }} - Full sync completed at $(date)"
+          GARMIN_CN_USERNAME: ${{ secrets.GARMIN_CN_USERNAME }}
+          GARMIN_CN_PASSWORD: ${{ secrets.GARMIN_CN_PASSWORD }}
+          GARMIN_GLOBAL_USERNAME: ${{ secrets.GARMIN_GLOBAL_USERNAME }}
+          GARMIN_GLOBAL_PASSWORD: ${{ secrets.GARMIN_GLOBAL_PASSWORD }}
+          GARMIN_MIGRATE_NUM: ${{ secrets.GARMIN_MIGRATE_NUM }}
+          GARMIN_MIGRATE_START: ${{ secrets.GARMIN_MIGRATE_START }}
+        run: |
+          # 在此处添加同步逻辑
+          # 例如，使用curl命令调用佳明API来同步数据
+          # 以下是一个示例，您需要根据实际API文档进行修改
+          curl -X POST https://api.garmin.com/sync \
+            -H "Content-Type: application/json" \
+            -d "{ \"username\": \"$GARMIN_CN_USERNAME\", \"password\": \"$GARMIN_CN_PASSWORD\", \"global_username\": \"$GARMIN_GLOBAL_USERNAME\", \"global_password\": \"$GARMIN_GLOBAL_PASSWORD\", \"migrate_num\": \"$GARMIN_MIGRATE_NUM\", \"migrate_start\": \"$GARMIN_MIGRATE_START\" }"
